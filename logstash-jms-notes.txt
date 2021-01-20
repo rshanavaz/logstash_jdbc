@@ -1,0 +1,124 @@
+jms.conf
+
+
+input {
+	jms {
+		use_jms_timestamp => false
+		yaml_file => "jms.yml"
+		yaml_section => "weblogic"
+		destination => "jmsServer/jmsModule!QUEUE_NAME"
+	}
+}
+
+output {
+	stdout { 
+		codec => rubydebug
+	}
+}
+
+
+
+jms.yml
+
+weblogic:
+  :jndi_name: jms/QueueConnectionFactory
+  :jndi_context:
+    java.naming.factory.initial: weblogic.jndi.WLInitialContextFactory 
+    java.naming.provider.url: t3://localhost:7001
+    java.naming.factory.url.pkgs: javax.naming:javax.jms
+    java.naming.security.principal: weblogic
+    java.naming.security.credentials: weblogic12345
+  :require_jars:
+    - ./Middleware/wlserver/server/lib/wlthint3client.jar
+    - ./Middleware/wlserver/server/lib/wljmsclient.jar
+    - ./Middleware/wlserver/server/lib/wlclient.jar
+
+
+*****************************************************************************************************
+
+The input of the jms.conf :
+input {
+jms { pub_sub => false
+include_header => false
+include_properties => false
+include_body => true
+use_jms_timestamp => false
+yaml_file => "/home/chris/Downloads/logstash-7.5.2/config/jms.yml"
+yaml_section => "weblogic"
+destination => "DemoQ"
+}
+}
+
+The yml :
+
+weblogic:
+:jndi_name: jms/DemoCF
+:jndi_context:
+java.naming.factory.initial: weblogic.jndi.WLInitialContextFactory
+java.naming.provider.url: t3://localhost:7001
+java.naming.factory.url.pkgs: javax.naming:javax.jms
+java.naming.security.principal: weblogic
+java.naming.security.credentials: *****!
+:require_jars:
+- /home/chris/Downloads/wlogic/fmw_12.2.1.0.0_wls_quick_Disk1_1of1/wls12210/wlserver/server/lib/wlthint3client.jar
+- /home/chris/Downloads/wlogic/fmw_12.2.1.0.0_wls_quick_Disk1_1of1/wls12210/wlserver/server/lib/wljmsclient.jar
+- /home/chris/Downloads/wlogic/fmw_12.2.1.0.0_wls_quick_Disk1_1of1/wls12210/wlserver/server/lib/wlclient.jar
+
+and the ouput of the Logstash :
+
+[2020-01-31T14:50:10,284][WARN ][logstash.inputs.jms ][main] JMS Consumer Died {:exception=>"Java::WeblogicJmsCommon::JMSException", :exception_message=>"[JMSExceptions:045101]The destination name passed to the createTopic or createQueue "DemoQ" is invalid. If the destination name does not contain a "/" character, then it must be the name of a distributed destination that is available in the cluster to which the client is attached. If it does contain a "/" character, then the string before the "/" must be the name of a JMS server or a ".". The string after the "/" is the name of a the desired destination. If the "./" version of the string is used then any destination with the given name on the local WebLogic Server instance
+
+
+After days I figured this out! In the field of destination use:
+jmsmodulename!destinationname (from docs of Oracle ) ,
+for a clustered environment!!
+Neither "/" nor "./"
+
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+$LOGSTASH_HOME/bin/plugin install logstash-input-jms
+
+To use it, we need to create a jms.yml configuration file for the plugin.
+
+weblogic:
+  :jndi_name: jms/DemoCF
+  :jndi_context:
+    java.naming.factory.initial: weblogic.jndi.WLInitialContextFactory
+    java.naming.provider.url: t3://localhost:7001
+    java.naming.factory.url.pkgs: javax.naming:javax.jms
+    java.naming.security.principal: weblogic
+    java.naming.security.credentials: welcome1
+  :require_jars:
+    - /Users/jpvadell/oracle/weblogic/12.2.1.0/wlserver/server/lib/wlthint3client.jar
+    - /Users/jpvadell/oracle/weblogic/12.2.1.0/wlserver/server/lib/wljmsclient.jar
+    - /Users/jpvadell/oracle/weblogic/12.2.1.0/wlserver/server/lib/wlclient.jar
+
+I am using Weblogic 12.2.1 jars connecting to an older Weblogic server without any trouble.
+
+Then we must create the logstash configuration file logstash-wlsjms.conf
+
+input {
+  jms {
+     use_jms_timestamp => false
+     yaml_file => "$LOGSTASH_CONFIG_HOME/conf/jms/jms.yml"
+     yaml_section => "weblogic"
+     destination => "DemoJMSServer/DemoJMSModule!DemoQ"
+  }
+}
+output {
+    elasticsearch { hosts => ["localhost:9200"] }
+    stdout { codec => rubydebug }
+}
+
+The destination tag is JMSSERVER_NAME/JMS_MODULE!QUEUENAME (not jndi QueueName)
+
+Run it! 
+
+$LOGSTASH_HOME/bin/logstash -f $LOGSTASH_CONFIG_HOME/conf/logstash-wlsjms.conf
+
+
+Put some messages at the JMS Queue and check it at Kibana.
+
+Enjoy!!
